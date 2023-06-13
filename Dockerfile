@@ -12,3 +12,5 @@ RUN poetry config virtualenvs.create false
 RUN poetry install --no-root
 
 COPY . /usr/src/app/
+
+CMD ["python", "main.py"]
