@@ -1,10 +1,68 @@
-import json
+import asyncio
+import uuid
 
 import requests
 from bs4 import BeautifulSoup
+from sqlalchemy import insert
+
+from database import async_session_maker
+from models.models import HoroscopeData
+
+horoscopes = [
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/skorpion-nedelya.html',
+        'zodiac_sign_id': 638
+    },
+{
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/vesy-nedelya.html',
+        'zodiac_sign_id': 635
+    },
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/strelets-nedelya.html',
+        'zodiac_sign_id': 408
+    },
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/kozerog-nedelya.html',
+        'zodiac_sign_id': 81
+    },
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/vodolej-nedelya.html',
+        'zodiac_sign_id': 433
+    },
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/ryby-nedelya.html',
+        'zodiac_sign_id': 310
+    },
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/oven-nedelya.html',
+        'zodiac_sign_id': 449
+    },
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/telets-nedelya.html',
+        'zodiac_sign_id': 571
+    },
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/bliznetsy-nedelya.html',
+        'zodiac_sign_id': 727
+    },
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/rak-nedelya.html',
+        'zodiac_sign_id': 288
+    },
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/lev-nedelya.html',
+        'zodiac_sign_id': 978
+    },
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/deva-nedelya.html',
+        'zodiac_sign_id': 664
+    },
+]
+
+Session = async_session_maker()
 
 
-def get_horoscope(url, filename):
+def get_horoscope(url, zodiac_sign_id):
     headers = {
         "Accept": "*/*",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/113.0"
@@ -14,98 +72,38 @@ def get_horoscope(url, filename):
     r.encoding = 'utf-8'
     src = r.text
 
-    with open(filename, 'w', encoding='utf-8') as file:
-        file.write(src)
-
-    with open(filename, 'r', encoding='utf-8') as file:
-        src = file.read()
-
     soup = BeautifulSoup(src, "html.parser")
-    decode_text = soup.get_text()
-
-    # Find all the date elements (i.e., <i> tags with class "sprl")
     date_elements = soup.find_all('i', class_='sprl')
 
-    # Extract the date and text for each element
-    data = []
+    horoscope_data = []
     for date_element in date_elements:
         date = date_element.text.strip()
         text = date_element.find_next_sibling('div').text.strip()
-        entry = {'date': date, 'text': text}
-        data.append(entry)
+        entry = {'date': date, 'text': text, 'zodiac_sign_id': zodiac_sign_id}
+        horoscope_data.append(entry)
 
-    with open(f'{filename}_json.json', 'w', encoding='utf-8') as file:
-        json.dump(data, file, indent=4, ensure_ascii=False)
-
-    with open(f'{filename}_json.json', 'r', encoding='utf-8') as file:
-        data = json.load(file)
-
-    days_to_remove = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
-    filtered_data = []
-    for entry in data:
-        date = entry['date']
-        text = entry['text']
-        for day in days_to_remove:
-            date = date.replace(day + ", ", "")
-        filtered_entry = {'date': date, 'text': text}
-        filtered_data.append(filtered_entry)
-
-    # Save the filtered data to a new JSON file
-    with open(f'{filename}_json.json', 'w', encoding='utf-8') as file:
-        json.dump(filtered_data, file, indent=4, ensure_ascii=False)
+    return horoscope_data
 
 
-# URLs and filenames for different horoscopes
-horoscopes = [
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/skorpion-nedelya.html',
-        'filename': 'zodiacs_data/Скорпион/index.html'
-    },
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/vesy-nedelya.html',
-        'filename': 'zodiacs_data/Весы/index.html'
-    },
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/strelets-nedelya.html',
-        'filename': 'zodiacs_data/Стрелец/index.html'
-    },
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/kozerog-nedelya.html',
-        'filename': 'zodiacs_data/Козерог/index.html'
-    },
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/vodolej-nedelya.html',
-        'filename': 'zodiacs_data/Водолей/index.html'
-    },
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/ryby-nedelya.html',
-        'filename': 'zodiacs_data/Рыбы/index.html'
-    },
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/oven-nedelya.html',
-        'filename': 'zodiacs_data/Овен/index.html'
-    },
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/telets-nedelya.html',
-        'filename': 'zodiacs_data/Телец/index.html'
-    },
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/bliznetsy-nedelya.html',
-        'filename': 'zodiacs_data/Близнецы/index.html'
-    },
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/rak-nedelya.html',
-        'filename': 'zodiacs_data/Рак/index.html'
-    },
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/lev-nedelya.html',
-        'filename': 'zodiacs_data/Лев/index.html'
-    },
-    {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/deva-nedelya.html',
-        'filename': 'zodiacs_data/Дева/index.html'
-    },
-]
+async def scrape_horoscopes():
+    async with Session as session:
+        for horoscope in horoscopes:
+            url = horoscope['url']
+            zodiac_sign_id = horoscope['zodiac_sign_id']
+            horoscope_data = get_horoscope(url, zodiac_sign_id)
 
-for horoscope in horoscopes:
-    get_horoscope(horoscope['url'], horoscope['filename'])
+            # Generate UUIDs for the horoscope entries
+            for data in horoscope_data:
+                data['id'] = str(uuid.uuid4())
+
+            insert_statement = insert(HoroscopeData).values(horoscope_data)
+            await session.execute(insert_statement)
+
+        await session.commit()
+
+
+async def main():
+    await scrape_horoscopes()
+
+if __name__ == "__main__":
+    asyncio.run(main())
