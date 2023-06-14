@@ -137,6 +137,9 @@ async def another_day_option(message: types.Message, state: FSMContext):
 
 # Start the bot
 async def run_bot():
+    port = int(os.environ.get('PORT', 5000))
+    await bot.set_webhook(url=f"https://zodiacbot.herokuapp.com/{bot_token}")
+    await bot.set_webhook(url=None)
     await dp.start_polling()
 
 if __name__ == '__main__':
