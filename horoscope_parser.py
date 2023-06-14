@@ -77,7 +77,8 @@ def get_horoscope(url, zodiac_sign_id):
 
     horoscope_data = []
     for date_element in date_elements:
-        date = date_element.text.strip()
+        date = date_element.text.strip().split(' ')[-2:]
+        date = ' '.join(date)
         text = date_element.find_next_sibling('div').text.strip()
         entry = {'date': date, 'text': text, 'zodiac_sign_id': zodiac_sign_id}
         horoscope_data.append(entry)
