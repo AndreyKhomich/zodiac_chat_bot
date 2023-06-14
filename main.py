@@ -46,7 +46,6 @@ async def start(message: types.Message):
 @dp.message_handler(state='zodiac_sign', content_types=types.ContentType.TEXT)
 async def text_message(message: types.Message, state: FSMContext):
     chat_id = message.chat.id
-
     zodiac_sign = message.text
 
     # Save the user's zodiac sign in the context
