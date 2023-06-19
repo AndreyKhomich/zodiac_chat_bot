@@ -1,12 +1,14 @@
-import asyncio
+import logging
 import os
 
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher import FSMContext
 from aiogram.types import ParseMode
+from asyncpg import InterfaceError
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from database import async_session_maker
 from models.models import HoroscopeData, ZodiacSign
@@ -27,6 +29,7 @@ month_mapping = {
 }
 
 bot_token = os.environ.get('BOT_TOKEN')
+port = os.environ.get('PORT')
 
 # Create the bot and dispatcher
 bot = Bot(token=bot_token)
@@ -118,6 +121,11 @@ async def day_of_week(message: types.Message, state: FSMContext):
     except ValueError:
         await bot.send_message(chat_id=chat_id, text="Неверный формат даты. Пожалуйста, введите дату в формате 'день месяц'. Например, '11 июня'.")
 
+    except (InterfaceError, SQLAlchemyError):
+        await bot.send_message(chat_id=chat_id, text="Ошибка соединения с базой данных. Пожалуйста, попробуйте позже.")
+        logging.exception("An error occurred while querying the database.")
+        await state.finish()
+
 
 # Asynchronous handler for the another day option
 @dp.message_handler(state='another_day_option', content_types=types.ContentType.TEXT)
@@ -135,12 +143,17 @@ async def another_day_option(message: types.Message, state: FSMContext):
         await bot.send_message(chat_id=chat_id, text="Не верный ответ. Пожалуйста введите 'да' или 'нет'.")
 
 
-# Start the bot
-async def run_bot():
-    port = int(os.environ.get('PORT', 5000))
-    await bot.set_webhook(url=f"https://zodiacbot.herokuapp.com/{bot_token}")
+async def run_bot(dispatcher: Dispatcher):
+    await bot.set_webhook(url=f"https://zodiacbot.herokuapp.com/webhook/{bot_token}", drop_pending_updates=True)
     await bot.set_webhook(url=None)
-    await dp.start_polling()
+    await dispatcher.start_polling()
 
 if __name__ == '__main__':
-    asyncio.run(run_bot())
+    executor.start_webhook(
+        dispatcher=dp,
+        webhook_path=f'/webhook/{bot_token}',
+        on_startup=run_bot,
+        skip_updates=True,
+        host='0.0.0.0',
+        port=port,
+    )
