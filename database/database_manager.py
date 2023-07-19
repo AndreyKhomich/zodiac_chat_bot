@@ -1,8 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from database.database import async_session_maker
 from models.models import HoroscopeData, ZodiacSign
-from database import async_session_maker
 
 
 class DatabaseManager:

@@ -5,7 +5,8 @@ from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher import FSMContext
-from aiogram.types import ParseMode, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (CallbackQuery, InlineKeyboardButton,
+                           InlineKeyboardMarkup, ParseMode)
 from asyncpg import InterfaceError
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -88,12 +89,9 @@ async def day_of_week(callback_query: CallbackQuery, state: FSMContext):
                                    parse_mode=ParseMode.MARKDOWN)
 
             await bot.send_message(chat_id=chat_id,
-                                   text="Вы желаете получить предсказание на другой день? "
+                                   text="Вы желаете получить предсказание на другой день?"
                                         "Пожалуйста, введите 'да' или 'нет'.")
             await dp.current_state().set_state('another_day_option')
-        else:
-            await bot.send_message(chat_id=chat_id, text="Предсказание не найдено.")
-            await state.finish()
 
     except (InterfaceError, SQLAlchemyError):
         await bot.send_message(chat_id=callback_query.from_user.id,
