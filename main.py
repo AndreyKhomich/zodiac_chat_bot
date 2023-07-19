@@ -5,13 +5,12 @@ from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher import FSMContext
-from aiogram.types import ParseMode
+from aiogram.types import ParseMode, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from asyncpg import InterfaceError
-from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from database import async_session_maker
-from models.models import HoroscopeData, ZodiacSign
+from database.database_manager import DatabaseManager
+from utils.keyboards import inline_kb_full
 
 month_mapping = {
     'января': 1,
@@ -38,48 +37,35 @@ dp = Dispatcher(bot, storage=storage)
 dp.middleware.setup(LoggingMiddleware())
 
 
-# Asynchronous handler for the /start command
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
-    await message.reply("Добро пожаловать в гороскоп бот!\n"
-                        "Для получения предсказания, пожалуйста введите ваш знак зодиака:")
+    await message.reply(
+        "Добро пожаловать в гороскоп бот!\n"
+        "Для получения предсказания, пожалуйста выберите ваш знак зодиака:", reply_markup=inline_kb_full)
     await dp.current_state().set_state('zodiac_sign')
 
 
-@dp.message_handler(state='zodiac_sign', content_types=types.ContentType.TEXT)
-async def text_message(message: types.Message, state: FSMContext):
-    chat_id = message.chat.id
-    zodiac_sign = message.text
-
-    # Save the user's zodiac sign in the context
+@dp.callback_query_handler(lambda c: c.data.startswith('знак_'), state='zodiac_sign')
+async def process_zodiac_sign(callback_query: CallbackQuery, state: FSMContext):
+    zodiac_sign = callback_query.data.split('_')[1]
     await state.update_data(zodiac_sign=zodiac_sign)
+    chat_id = callback_query.from_user.id
 
-    # Check if the zodiac sign is valid
-    valid_zodiac_signs = ["близнецы", "весы", "водолей", "дева", "козерог", "лев",
-                          "овен", "рак", "рыбы", "скорпион", "стрелец", "телец"]
+    database_manager = DatabaseManager()
+    dates = await database_manager.fetch_dates(zodiac_sign)
 
-    if zodiac_sign.lower() in valid_zodiac_signs:
-        # Ask for the day of the week
-        await bot.send_message(chat_id=chat_id, text="Выберите дату, для которой вы хотели бы получить предсказание:")
-
-        # Update the state to 'day_of_week' after asking for the zodiac sign
-        await dp.current_state().set_state('day_of_week')
-    else:
-        await bot.send_message(chat_id=chat_id, text="Неверный знак зодиака."
-                                                     " Пожалуйста, введите существующий знак зодиака. Например Весы:")
-        await dp.current_state().set_state('zodiac_sign')
+    await show_date_keyboard(chat_id, dates)
+    await state.set_state('day_of_week')
+    await callback_query.answer()
 
 
-@dp.message_handler(state='day_of_week', content_types=types.ContentType.TEXT)
-async def day_of_week(message: types.Message, state: FSMContext):
-
-    chat_id = message.chat.id
-    date_of_week = message.text
+@dp.callback_query_handler(lambda c: c.data.startswith('дата_'), state='day_of_week')
+async def day_of_week(callback_query: CallbackQuery, state: FSMContext):
+    date = callback_query.data.split('_')[1]
+    chat_id = callback_query.from_user.id
 
     try:
-        # Parse the date using dateparser
-        day, month = date_of_week.split(' ')
-
+        day, month = date.split(' ')
         day = int(day)
         month = month_mapping.get(month.lower())
 
@@ -92,37 +78,27 @@ async def day_of_week(message: types.Message, state: FSMContext):
         user_data = await state.get_data()
         zodiac_sign = user_data.get('zodiac_sign')
 
-        # Retrieve the corresponding horoscope data from the database
-        async with async_session_maker() as session:
-            query = (
-                select(HoroscopeData)
-                .select_from(HoroscopeData.join(ZodiacSign, HoroscopeData.c.zodiac_sign_id == ZodiacSign.c.id))
-                .where(HoroscopeData.c.date == date_of_week)
-                .where(ZodiacSign.c.name == zodiac_sign)
-            )
-            result = await session.execute(query)
-            horoscope_data = result.fetchone()
+        database_manager = DatabaseManager()
+        horoscope_data = await database_manager.get_horoscope_data(date, zodiac_sign)
 
         if horoscope_data:
             horoscope_text = horoscope_data.text
-            await bot.send_message(chat_id=chat_id, text=horoscope_text, parse_mode=ParseMode.MARKDOWN)
+            await bot.send_message(chat_id=chat_id,
+                                   text=horoscope_text,
+                                   parse_mode=ParseMode.MARKDOWN)
 
-            # Prompt the user to choose another day or finish the conversation
-            await bot.send_message(chat_id=chat_id, text="Вы желаете получить предсказание на другой день? "
-                                                         "Пожалуйста, введите 'да' или 'нет'.")
+            await bot.send_message(chat_id=chat_id,
+                                   text="Вы желаете получить предсказание на другой день? "
+                                        "Пожалуйста, введите 'да' или 'нет'.")
             await dp.current_state().set_state('another_day_option')
         else:
-            await bot.send_message(chat_id=chat_id, text="Данные гороскопа для указанного знака зодиака "
-                                                         "и дня недели не найдены. Пожалуйста выберите другую дату:")
-            await dp.current_state().set_state('day_of_week')
-
-        await session.close()
-
-    except ValueError:
-        await bot.send_message(chat_id=chat_id, text="Неверный формат даты. Пожалуйста, введите дату в формате 'день месяц'. Например, '11 июня'.")
+            await bot.send_message(chat_id=chat_id, text="Предсказание не найдено.")
+            await state.finish()
 
     except (InterfaceError, SQLAlchemyError):
-        await bot.send_message(chat_id=chat_id, text="Ошибка соединения с базой данных. Пожалуйста, попробуйте позже.")
+        await bot.send_message(chat_id=callback_query.from_user.id,
+                               text="Ошибка соединения с базой данных. Пожалуйста, попробуйте позже.",
+                               show_alert=True)
         logging.exception("An error occurred while querying the database.")
         await state.finish()
 
@@ -134,19 +110,42 @@ async def another_day_option(message: types.Message, state: FSMContext):
     option = message.text.lower()
 
     if option == 'да':
-        await bot.send_message(chat_id=chat_id, text="Пожалуйста выберите другую дату:")
+        user_data = await state.get_data()
+        zodiac_sign = user_data.get('zodiac_sign')
+
+        database_manager = DatabaseManager()
+        dates = await database_manager.fetch_dates(zodiac_sign)
+
+        await show_date_keyboard(chat_id, dates)
         await dp.current_state().set_state('day_of_week')
+
     elif option == 'нет':
         await bot.send_message(chat_id=chat_id, text="Используйте полученные знания разумно!")
         await state.finish()
+
     else:
         await bot.send_message(chat_id=chat_id, text="Не верный ответ. Пожалуйста введите 'да' или 'нет'.")
+
+
+async def show_date_keyboard(chat_id, dates):
+    keyboard = InlineKeyboardMarkup()
+
+    for date in dates:
+        button = InlineKeyboardButton(date, callback_data='дата_' + date)
+        keyboard.insert(button)
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text="Выберите дату, для которой вы хотели бы получить предсказание:",
+        reply_markup=keyboard
+    )
 
 
 async def run_bot(dispatcher: Dispatcher):
     await bot.set_webhook(url=f"https://zodiacbot.herokuapp.com/webhook/{bot_token}", drop_pending_updates=True)
     await bot.set_webhook(url=None)
     await dispatcher.start_polling()
+
 
 if __name__ == '__main__':
     executor.start_webhook(
