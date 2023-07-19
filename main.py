@@ -88,13 +88,11 @@ async def day_of_week(callback_query: CallbackQuery, state: FSMContext):
                                    text=horoscope_text,
                                    parse_mode=ParseMode.MARKDOWN)
 
-            await bot.send_message(chat_id=chat_id,
-                                   text="Вы желаете получить предсказание на другой день?"
-                                        "Пожалуйста, введите 'да' или 'нет'.")
+            await show_another_day_keyboard(chat_id)
             await dp.current_state().set_state('another_day_option')
 
     except (InterfaceError, SQLAlchemyError):
-        await bot.send_message(chat_id=callback_query.from_user.id,
+        await bot.send_message(chat_id=chat_id,
                                text="Ошибка соединения с базой данных. Пожалуйста, попробуйте позже.",
                                show_alert=True)
         logging.exception("An error occurred while querying the database.")
@@ -102,12 +100,12 @@ async def day_of_week(callback_query: CallbackQuery, state: FSMContext):
 
 
 # Asynchronous handler for the another day option
-@dp.message_handler(state='another_day_option', content_types=types.ContentType.TEXT)
-async def another_day_option(message: types.Message, state: FSMContext):
-    chat_id = message.chat.id
-    option = message.text.lower()
+@dp.callback_query_handler(lambda c: c.data.startswith('ответ_'), state='another_day_option')
+async def another_day_option(callback_query: CallbackQuery, state: FSMContext):
+    answer = callback_query.data.split('_')[1]
+    chat_id = callback_query.from_user.id
 
-    if option == 'да':
+    if answer == 'да':
         user_data = await state.get_data()
         zodiac_sign = user_data.get('zodiac_sign')
 
@@ -117,12 +115,9 @@ async def another_day_option(message: types.Message, state: FSMContext):
         await show_date_keyboard(chat_id, dates)
         await dp.current_state().set_state('day_of_week')
 
-    elif option == 'нет':
+    elif answer == 'нет':
         await bot.send_message(chat_id=chat_id, text="Используйте полученные знания разумно!")
         await state.finish()
-
-    else:
-        await bot.send_message(chat_id=chat_id, text="Не верный ответ. Пожалуйста введите 'да' или 'нет'.")
 
 
 async def show_date_keyboard(chat_id, dates):
@@ -135,6 +130,20 @@ async def show_date_keyboard(chat_id, dates):
     await bot.send_message(
         chat_id=chat_id,
         text="Выберите дату, для которой вы хотели бы получить предсказание:",
+        reply_markup=keyboard
+    )
+
+
+async def show_another_day_keyboard(chat_id):
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(
+        InlineKeyboardButton("Да", callback_data="ответ_да"),
+        InlineKeyboardButton("Нет", callback_data="ответ_нет")
+    )
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text="Вы желаете получить предсказание на другой день?",
         reply_markup=keyboard
     )
 
