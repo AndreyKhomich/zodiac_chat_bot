@@ -6,55 +6,55 @@ from bs4 import BeautifulSoup
 from sqlalchemy import insert, select
 
 from database.database import async_session_maker
-from models.models import HoroscopeData
+from models.models import ManHoroscopeData
 
 horoscopes = [
     {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/skorpion-nedelya.html',
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/skorpion-lyubovnyj-nedelya.html',
         'zodiac_sign_id': 638
     },
-{
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/vesy-nedelya.html',
+    {
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/vesy-lyubovnyj-nedelya.html',
         'zodiac_sign_id': 635
     },
     {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/strelets-nedelya.html',
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/strelets-lyubovnyj-nedelya.html',
         'zodiac_sign_id': 408
     },
     {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/kozerog-nedelya.html',
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/kozerog-lyubovnyj-nedelya.html',
         'zodiac_sign_id': 81
     },
     {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/vodolej-nedelya.html',
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/vodolej-lyubovnyj-nedelya.html',
         'zodiac_sign_id': 433
     },
     {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/ryby-nedelya.html',
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/ryby-lyubovnyj-nedelya.html',
         'zodiac_sign_id': 310
     },
     {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/oven-nedelya.html',
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/oven-lyubovnyj-nedelya.html',
         'zodiac_sign_id': 449
     },
     {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/telets-nedelya.html',
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/telets-lyubovnyj-nedelya.html',
         'zodiac_sign_id': 571
     },
     {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/bliznetsy-nedelya.html',
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/bliznetsy-lyubovnyj-nedelya.htmll',
         'zodiac_sign_id': 727
     },
     {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/rak-nedelya.html',
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/rak-lyubovnyj-nedelya.html',
         'zodiac_sign_id': 288
     },
     {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/lev-nedelya.html',
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/lev-lyubovnyj-nedelya.html',
         'zodiac_sign_id': 978
     },
     {
-        'url': 'https://gadalkindom.ru/goroskop/nedelya/deva-nedelya.html',
+        'url': 'https://gadalkindom.ru/goroskop/nedelya/deva-lyubovnyj-nedelya.html',
         'zodiac_sign_id': 664
     },
 ]
@@ -86,7 +86,7 @@ def get_horoscope(url, zodiac_sign_id):
     return horoscope_data
 
 
-async def scrape_horoscopes():
+async def man_scrape_horoscopes():
     async with Session as session:
         for horoscope in horoscopes:
             url = horoscope['url']
@@ -99,18 +99,19 @@ async def scrape_horoscopes():
             for data in horoscope_data:
                 date = data['date']
                 existing_entry = await session.execute(
-                    select(HoroscopeData).where(HoroscopeData.columns.zodiac_sign_id == zodiac_sign_id,
-                                                HoroscopeData.columns.date == date)
+                    select(ManHoroscopeData).where(ManHoroscopeData.columns.zodiac_sign_id == zodiac_sign_id,
+                                                   ManHoroscopeData.columns.date == date)
                 )
                 if not existing_entry.fetchone():
-                    insert_statement = insert(HoroscopeData).values(**data, zodiac_sign_id=zodiac_sign_id)
+                    insert_statement = insert(ManHoroscopeData).values(**data, zodiac_sign_id=zodiac_sign_id)
                     await session.execute(insert_statement)
 
         await session.commit()
 
 
 async def main():
-    await scrape_horoscopes()
+    await man_scrape_horoscopes()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
