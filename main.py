@@ -52,7 +52,7 @@ async def start(message: types.Message, state: FSMContext):
 async def handle_start_command(message: types.Message):
     state = dp.current_state(user=message.from_user.id)
     if await state.get_state() is not None:
-        await message.reply("Вы уже выбрали знак зодиака. Пожалуйста используйте кнопки для взаимодействия с ботом.")
+        await message.reply("Вы уже начали общение с ботом. Пожалуйста используйте кнопки для взаимодействия.")
     else:
         await start(message)
 
@@ -134,7 +134,9 @@ async def another_day_option(callback_query: CallbackQuery, state: FSMContext):
         await dp.current_state().set_state('zodiac_sign')
 
     elif answer == 'нет':
-        await bot.send_message(chat_id=chat_id, text="Используйте полученные знания разумно!")
+        await bot.send_message(chat_id=chat_id,
+                               text="Используйте полученные знания разумно!\n\n"
+                                    "Для повторного общения с ботом нажмите на ссылку: /start")
         await state.finish()
 
     await callback_query.answer()
