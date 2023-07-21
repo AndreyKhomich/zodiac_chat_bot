@@ -16,7 +16,7 @@ class DatabaseManager:
             )
             try:
                 result = await session.execute(query)
-                dates = [row[0] for row in result.fetchall()][-5:]
+                dates = [row[0] for row in result.fetchall()][-7:]
                 return dates
             except SQLAlchemyError as e:
                 raise e
