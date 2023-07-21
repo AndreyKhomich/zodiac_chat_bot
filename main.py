@@ -6,7 +6,7 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher import FSMContext
 from aiogram.types import (CallbackQuery, InlineKeyboardButton,
-                           InlineKeyboardMarkup, ParseMode)
+                           InlineKeyboardMarkup, ParseMode, ReplyKeyboardMarkup)
 from asyncpg import InterfaceError
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -39,11 +39,31 @@ dp.middleware.setup(LoggingMiddleware())
 
 
 @dp.message_handler(commands=['start'])
-async def start(message: types.Message):
+async def start(message: types.Message, state: FSMContext):
     await message.reply(
         "Добро пожаловать в гороскоп бот!\n"
-        "Для получения предсказания, пожалуйста выберите ваш знак зодиака:", reply_markup=inline_kb_full)
-    await dp.current_state().set_state('zodiac_sign')
+        "Для получения предсказания, пожалуйста выберите ваш знак зодиака:",
+        reply_markup=inline_kb_full
+    )
+    await state.set_state('zodiac_sign')
+
+
+@dp.message_handler(commands=['start'], state='*')
+async def handle_start_command(message: types.Message):
+    state = dp.current_state(user=message.from_user.id)
+    if await state.get_state() is not None:
+        await message.reply("Вы уже выбрали знак зодиака. Пожалуйста используйте кнопки для взаимодействия с ботом.")
+    else:
+        await start(message)
+
+
+@dp.message_handler(state='*')
+async def handle_unexpected_messages(message: types.Message):
+    state = dp.current_state(user=message.from_user.id)
+    if await state.get_state() is not None:
+        await message.reply("Пожалуйста, используйте кнопки для взаимодействия с ботом.")
+    else:
+        await message.reply("Неизвестная команда. Для начала работы с ботом используйте /start.")
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith('знак_'), state='zodiac_sign')
@@ -66,16 +86,6 @@ async def day_of_week(callback_query: CallbackQuery, state: FSMContext):
     chat_id = callback_query.from_user.id
 
     try:
-        day, month = date.split(' ')
-        day = int(day)
-        month = month_mapping.get(month.lower())
-
-        if not (1 <= day <= 31):
-            raise ValueError
-
-        if month is None:
-            raise ValueError
-
         user_data = await state.get_data()
         zodiac_sign = user_data.get('zodiac_sign')
 
@@ -84,8 +94,9 @@ async def day_of_week(callback_query: CallbackQuery, state: FSMContext):
 
         if horoscope_data:
             horoscope_text = horoscope_data.text
+            message = f"Предсказание на {date} для знака {zodiac_sign}:\n\n{horoscope_text}"
             await bot.send_message(chat_id=chat_id,
-                                   text=horoscope_text,
+                                   text=message,
                                    parse_mode=ParseMode.MARKDOWN)
 
             await show_another_day_keyboard(chat_id)
@@ -93,13 +104,12 @@ async def day_of_week(callback_query: CallbackQuery, state: FSMContext):
 
     except (InterfaceError, SQLAlchemyError):
         await bot.send_message(chat_id=chat_id,
-                               text="Ошибка соединения с базой данных. Пожалуйста, попробуйте позже.",
-                               show_alert=True)
+                               text="Ошибка соединения с базой данных. Пожалуйста, попробуйте позже."
+                               )
         logging.exception("An error occurred while querying the database.")
         await state.finish()
 
 
-# Asynchronous handler for the another day option
 @dp.callback_query_handler(lambda c: c.data.startswith('ответ_'), state='another_day_option')
 async def another_day_option(callback_query: CallbackQuery, state: FSMContext):
     answer = callback_query.data.split('_')[1]
@@ -115,9 +125,19 @@ async def another_day_option(callback_query: CallbackQuery, state: FSMContext):
         await show_date_keyboard(chat_id, dates)
         await dp.current_state().set_state('day_of_week')
 
+    elif answer == 'знак':
+        await bot.send_message(
+            chat_id=chat_id,
+            text="Пожалуйста, выберите знак зодиака для получения новых предсказаний:",
+            reply_markup=inline_kb_full
+        )
+        await dp.current_state().set_state('zodiac_sign')
+
     elif answer == 'нет':
         await bot.send_message(chat_id=chat_id, text="Используйте полученные знания разумно!")
         await state.finish()
+
+    await callback_query.answer()
 
 
 async def show_date_keyboard(chat_id, dates):
@@ -136,14 +156,13 @@ async def show_date_keyboard(chat_id, dates):
 
 async def show_another_day_keyboard(chat_id):
     keyboard = InlineKeyboardMarkup()
-    keyboard.row(
-        InlineKeyboardButton("Да", callback_data="ответ_да"),
-        InlineKeyboardButton("Нет", callback_data="ответ_нет")
-    )
+    keyboard.add(InlineKeyboardButton("Да", callback_data="ответ_да"))\
+        .add(InlineKeyboardButton("Нет", callback_data="ответ_нет"))\
+        .add(InlineKeyboardButton("Выбрать новый знак", callback_data="ответ_знак"))
 
     await bot.send_message(
         chat_id=chat_id,
-        text="Вы желаете получить предсказание на другой день?",
+        text="Вы желаете получить предсказание на другой день или выбрать новый знак зодиака?",
         reply_markup=keyboard
     )
 
