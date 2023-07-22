@@ -3,7 +3,7 @@ import uuid
 
 import requests
 from bs4 import BeautifulSoup
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, delete, func
 
 from database.database import async_session_maker
 from models.models import HoroscopeData
@@ -86,6 +86,27 @@ def get_horoscope(url, zodiac_sign_id):
     return horoscope_data
 
 
+async def delete_earliest_horoscopes():
+    async with Session as session:
+        for horoscope in horoscopes:
+            zodiac_sign_id = horoscope['zodiac_sign_id']
+
+            min_date = await session.scalar(
+                select(func.min(HoroscopeData.columns.date))
+                .where(HoroscopeData.columns.zodiac_sign_id == zodiac_sign_id)
+            )
+
+            if min_date:
+                delete_statement = (
+                    delete(HoroscopeData)
+                    .where(HoroscopeData.columns.zodiac_sign_id == zodiac_sign_id)
+                    .where(HoroscopeData.columns.date == min_date)
+                )
+                await session.execute(delete_statement)
+
+        await session.commit()
+
+
 async def scrape_horoscopes():
     async with Session as session:
         for horoscope in horoscopes:
@@ -95,15 +116,15 @@ async def scrape_horoscopes():
 
             for data in horoscope_data:
                 data['id'] = str(uuid.uuid4())
-
-            for data in horoscope_data:
                 date = data['date']
+                data['zodiac_sign_id'] = zodiac_sign_id
+
                 existing_entry = await session.execute(
                     select(HoroscopeData).where(HoroscopeData.columns.zodiac_sign_id == zodiac_sign_id,
                                                 HoroscopeData.columns.date == date)
                 )
                 if not existing_entry.fetchone():
-                    insert_statement = insert(HoroscopeData).values(**data, zodiac_sign_id=zodiac_sign_id)
+                    insert_statement = insert(HoroscopeData).values(**data)
                     await session.execute(insert_statement)
 
         await session.commit()
@@ -111,6 +132,7 @@ async def scrape_horoscopes():
 
 async def main():
     await scrape_horoscopes()
+    await delete_earliest_horoscopes()
 
 if __name__ == "__main__":
     asyncio.run(main())
