@@ -5,9 +5,13 @@ services:
     volumes:
       - .:/usr/src/app
     container_name: zodiac_prediction
-    command: poetry run python main.py
+    command: python main.py
     depends_on:
       - db
+      - redis
+    networks:
+      - celery_net
+
   db:
      image: postgres
      restart: always
@@ -24,6 +28,40 @@ services:
        - .env
      ports:
        - "5432:5432"
+     networks:
+       - celery_net
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    restart: always
+    command: redis-server --requirepass ${BROKER_PASSWORD}
+    environment:
+      - BROKER_URL=${BROKER_URL}
+      - BROKER_PASSWORD=${BROKER_PASSWORD}
+    env_file:
+      - .env
+    networks:
+      - celery_net
+
+  celery:
+    build: .
+    volumes:
+      - .:/usr/src/app
+    container_name: celery_worker
+    command: bash -c "celery -A celery_app:app worker --beat -l info"
+    depends_on:
+      - tgbot
+      - db
+      - redis
+    environment:
+      - CELERY_CONFIG_MODULE=celeryconfig
+    networks:
+      - celery_net
 
 volumes:
   postgres:
+
+networks:
+  celery_net:
+    driver: bridge
