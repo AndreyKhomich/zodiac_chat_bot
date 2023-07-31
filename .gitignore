@@ -74,7 +74,7 @@ target/
 #   install all needed dependencies.
 #Pipfile.lock
 
-# celery beat schedule file
+# celery_app beat schedule file
 celerybeat-schedule
 
 # SageMath parsed files
