@@ -6,12 +6,13 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher import FSMContext
 from aiogram.types import (CallbackQuery, InlineKeyboardButton,
-                           InlineKeyboardMarkup, ParseMode, ReplyKeyboardMarkup)
+                           InlineKeyboardMarkup, ParseMode)
 from asyncpg import InterfaceError
 from sqlalchemy.exc import SQLAlchemyError
 
-from database.database_manager import DatabaseManager
-from utils.keyboards import inline_kb_full
+from database.database_manager import fetch_dates, get_horoscope_data, save_user
+from keyboards import inline_kb_full, inline_kb_menu
+from models.models import HoroscopeData, LoveHoroscopeData, FinanceHoroscopeData
 
 month_mapping = {
     'января': 1,
@@ -31,7 +32,6 @@ month_mapping = {
 bot_token = os.environ.get('BOT_TOKEN')
 port = os.environ.get('PORT')
 
-# Create the bot and dispatcher
 bot = Bot(token=bot_token)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
@@ -40,21 +40,33 @@ dp.middleware.setup(LoggingMiddleware())
 
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    username = message.from_user.username
+
+    await save_user(user_id, username)
+
+    await bot.send_sticker(user_id, sticker="CAACAgIAAxkBAAEJ1Z1kw08f2y6zz4A7rheTsOh_npqF7gACVB0AAoqR0ElUTMG-FBDOOy8E")
     await message.reply(
         "Добро пожаловать в гороскоп бот!\n"
-        "Для получения предсказания, пожалуйста выберите ваш знак зодиака:",
+        "Пожалуйста выберите тип предсказания:",
+        reply_markup=inline_kb_menu
+    )
+    await state.set_state('menu_option')
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith('меню_'), state='menu_option')
+async def process_menu(callback_query: CallbackQuery, state: FSMContext):
+    selected_menu_option = callback_query.data.split('_')[1]
+    await state.update_data(selected_menu_option=selected_menu_option)
+    chat_id = callback_query.from_user.id
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text="Выберите ваш знак зодиака:",
         reply_markup=inline_kb_full
     )
     await state.set_state('zodiac_sign')
-
-
-@dp.message_handler(commands=['start'], state='*')
-async def handle_start_command(message: types.Message):
-    state = dp.current_state(user=message.from_user.id)
-    if await state.get_state() is not None:
-        await message.reply("Вы уже начали общение с ботом. Пожалуйста используйте кнопки для взаимодействия.")
-    else:
-        await start(message)
+    await callback_query.answer()
 
 
 @dp.message_handler(state='*')
@@ -72,8 +84,7 @@ async def process_zodiac_sign(callback_query: CallbackQuery, state: FSMContext):
     await state.update_data(zodiac_sign=zodiac_sign)
     chat_id = callback_query.from_user.id
 
-    database_manager = DatabaseManager()
-    dates = await database_manager.fetch_dates(zodiac_sign)
+    dates = await fetch_dates(zodiac_sign, HoroscopeData)
 
     await show_date_keyboard(chat_id, dates)
     await state.set_state('day_of_week')
@@ -82,30 +93,38 @@ async def process_zodiac_sign(callback_query: CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data.startswith('дата_'), state='day_of_week')
 async def day_of_week(callback_query: CallbackQuery, state: FSMContext):
+    user_data = await state.get_data()
+    zodiac_sign = user_data.get('zodiac_sign')
+    selected_menu_option = user_data.get('selected_menu_option')
     date = callback_query.data.split('_')[1]
     chat_id = callback_query.from_user.id
 
     try:
-        user_data = await state.get_data()
-        zodiac_sign = user_data.get('zodiac_sign')
-
-        database_manager = DatabaseManager()
-        horoscope_data = await database_manager.get_horoscope_data(date, zodiac_sign)
+        if selected_menu_option == 'Гороскоп':
+            horoscope_data = await get_horoscope_data(date, zodiac_sign, HoroscopeData)
+            await bot.send_sticker(chat_id,
+                                   sticker="CAACAgIAAxkBAAEJ1blkw0-Hhn-qhFZi2qFQtK37LVoNKwACQxEAAogjeUm7XAjLk6X4TS8E")
+        elif selected_menu_option == 'Любовный':
+            horoscope_data = await get_horoscope_data(date, zodiac_sign, LoveHoroscopeData)
+            await bot.send_sticker(chat_id,
+                                   sticker="CAACAgIAAxkBAAEJ1Y5kw0veMxR325K6NR5TFFOjXDFmRgAC1xkAAmIGcEmfFezVajtprS8E")
+        elif selected_menu_option == 'Финансовый':
+            horoscope_data = await get_horoscope_data(date, zodiac_sign, FinanceHoroscopeData)
+            await bot.send_sticker(chat_id,
+                                   sticker="CAACAgIAAxkBAAEJ1a9kw09jGIFoIKoAAcvqOU6_fd_dk6QAAo4ZAAJyUThJlnmGIsWVVecvBA")
+        else:
+            horoscope_data = None
 
         if horoscope_data:
             horoscope_text = horoscope_data.text
             message = f"Предсказание на {date} для знака {zodiac_sign}:\n\n{horoscope_text}"
-            await bot.send_message(chat_id=chat_id,
-                                   text=message,
-                                   parse_mode=ParseMode.MARKDOWN)
+            await bot.send_message(chat_id=chat_id, text=message, parse_mode=ParseMode.MARKDOWN)
 
             await show_another_day_keyboard(chat_id)
             await dp.current_state().set_state('another_day_option')
 
     except (InterfaceError, SQLAlchemyError):
-        await bot.send_message(chat_id=chat_id,
-                               text="Ошибка соединения с базой данных. Пожалуйста, попробуйте позже."
-                               )
+        await bot.send_message(chat_id=chat_id, text="Ошибка соединения с базой данных. Пожалуйста, попробуйте позже.")
         logging.exception("An error occurred while querying the database.")
         await state.finish()
 
@@ -119,8 +138,7 @@ async def another_day_option(callback_query: CallbackQuery, state: FSMContext):
         user_data = await state.get_data()
         zodiac_sign = user_data.get('zodiac_sign')
 
-        database_manager = DatabaseManager()
-        dates = await database_manager.fetch_dates(zodiac_sign)
+        dates = await fetch_dates(zodiac_sign, HoroscopeData)
 
         await show_date_keyboard(chat_id, dates)
         await dp.current_state().set_state('day_of_week')
@@ -133,10 +151,22 @@ async def another_day_option(callback_query: CallbackQuery, state: FSMContext):
         )
         await dp.current_state().set_state('zodiac_sign')
 
+    elif answer == 'категория':
+        await bot.send_message(
+            chat_id=chat_id,
+            text="Добро пожаловать в гороскоп бот!\n"
+            "Пожалуйста выберите тип предсказания:",
+            reply_markup=inline_kb_menu
+        )
+        await state.set_state('menu_option')
+
     elif answer == 'нет':
         await bot.send_message(chat_id=chat_id,
                                text="Используйте полученные знания разумно!\n\n"
                                     "Для повторного общения с ботом нажмите на ссылку: /start")
+        await bot.send_sticker(chat_id=chat_id,
+                               sticker="CAACAgIAAxkBAAEJ1ZVkw08EVSkElV3HWH-uDC9dCYbPzQAC9BQAAgUGeEk53VXKRWEqWy8E")
+
         await state.finish()
 
     await callback_query.answer()
@@ -158,9 +188,10 @@ async def show_date_keyboard(chat_id, dates):
 
 async def show_another_day_keyboard(chat_id):
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton("Да", callback_data="ответ_да"))\
-        .add(InlineKeyboardButton("Нет", callback_data="ответ_нет"))\
-        .add(InlineKeyboardButton("Выбрать новый знак", callback_data="ответ_знак"))
+    keyboard.add(InlineKeyboardButton("Да", callback_data="ответ_да")) \
+        .add(InlineKeyboardButton("Нет", callback_data="ответ_нет")) \
+        .add(InlineKeyboardButton("Выбрать новый знак", callback_data="ответ_знак")) \
+        .add(InlineKeyboardButton("Выбрать новую категорию", callback_data="ответ_категория"))
 
     await bot.send_message(
         chat_id=chat_id,
@@ -182,5 +213,5 @@ if __name__ == '__main__':
         on_startup=run_bot,
         skip_updates=True,
         host='0.0.0.0',
-        port=port,
+        port=port
     )
