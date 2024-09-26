@@ -1,4 +1,4 @@
-version: "3.11"
+version: "3.10"
 services:
   tgbot:
     build: .
@@ -15,7 +15,7 @@ services:
   db:
      image: postgres
      restart: always
-     container_name: db
+     container_name: database
      volumes:
          - postgres:/var/lib/postgresql/data
      environment:
@@ -48,7 +48,7 @@ services:
     build: .
     volumes:
       - .:/usr/src/app
-    container_name: celery_worker
+    container_name: zodiac_celery_worker
     command: bash -c "celery -A celery_app:app worker --beat -l info"
     depends_on:
       - tgbot
